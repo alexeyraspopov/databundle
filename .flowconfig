@@ -1,0 +1,14 @@
+[ignore]
+.*node_modules/resolve.*
+
+[include]
+
+[libs]
+
+[lints]
+sketchy-null=warn
+
+[options]
+exact_by_default=true
+
+[strict]
