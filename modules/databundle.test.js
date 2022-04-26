@@ -1,7 +1,5 @@
-// @flow
 import { test, expect } from "@jest/globals";
 import { createTable, query, derive, sort, take, rollup } from "./databundle.js";
-import type { Table } from "./databundle.js";
 import { mean, ascending, descending } from "d3-array";
 
 test("query", () => {

@@ -1,3 +1,3 @@
-module.exports = {
-  presets: [["@babel/preset-env", { targets: { node: "current" } }], "@babel/preset-flow"],
+export default {
+  presets: [["@babel/preset-env", { targets: { node: "current" } }]],
 };

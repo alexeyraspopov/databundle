@@ -6,7 +6,10 @@
     <script src="https://unpkg.com/lodash"></script>
     <script src="https://unpkg.com/platform"></script>
     <script src="https://unpkg.com/benchmark"></script>
-    <script type="module" src="./benchmark.js"></script>
+    <script type="module">
+      import * as methods from "./suite.js";
+      Object.assign(window, methods);
+    </script>
   </head>
   <body></body>
 </html>

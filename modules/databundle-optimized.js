@@ -1,3 +1,5 @@
+import { ascending, bisector } from "d3-array";
+
 export function createTable(source) {
   let columns = new Map();
   let length = source.data.length;
@@ -6,12 +8,15 @@ export function createTable(source) {
     switch (field.type) {
       case "number": {
         let values = source.data.map((record) => toNumber(record[field.name]));
-        column = { type: "number", values };
+        let pointers = createAscendingPointers(values);
+        column = { type: "number", values, pointers };
         break;
       }
       case "string": {
         let values = source.data.map((record) => toString(record[field.name]));
-        column = { type: "string", values };
+        let pointers = createAscendingPointers(values);
+        let slices = createSliceMap(values, pointers);
+        column = { type: "string", values, pointers, slices };
         break;
       }
       case "datetime": {
@@ -32,6 +37,27 @@ export function createTable(source) {
     order: TArray.from({ length }, (_, i) => i),
     size: length,
   };
+}
+
+function createAscendingPointers(values) {
+  let TypedArray = getTypedArray(values.length);
+  let pointers = TypedArray.from({ length: values.length }, (_, i) => i);
+  pointers.sort((iA, iB) => ascending(values[iA], values[iB]));
+  return pointers;
+}
+
+function createSliceMap(values, pointers) {
+  let map = new Map();
+  for (let index = 0, cursor, slice; index < pointers.length; index++) {
+    let value = values[pointers[index]];
+    if (cursor !== value) {
+      cursor = value;
+      slice = [index, 0];
+      map.set(cursor, slice);
+    }
+    slice[1]++;
+  }
+  return map;
 }
 
 function toNumber(value) {
@@ -71,30 +97,43 @@ export function derive(table, params) {
 export function query(table, params) {
   let size = table.size;
   let bitsetSize = Math.ceil(size / 32);
-  let predicate = getFilterFn(Object.keys(params));
-  predicate = predicate(params, table.columns);
-  let bitset = new Uint32Array(bitsetSize);
-  for (let index = 0; index < size; index++) {
-    if (predicate(index)) bitSetOne(bitset, index);
+  let sets = [];
+  for (let key in params) {
+    let column = table.columns.get(key);
+    if (column == null) throw new Error();
+    let bitset = new Uint32Array(bitsetSize);
+    let predicate = params[key];
+    let values = column.values;
+    switch (column.type) {
+      case "number": {
+        let bisect = bisector((i) => column.values[i]);
+        let lo = bisect.left(column.pointers, predicate.min);
+        let hi = bisect.right(column.pointers, predicate.max);
+        for (let i = lo; i < hi; i++) bitSetOne(bitset, column.pointers[i]);
+        break;
+      }
+      case "string": {
+        for (let n = 0; n < predicate.length; n++) {
+          let range = column.slices.get(predicate[n]) ?? [0, 0];
+          for (let i = range[0]; i < range[0] + range[1]; i++)
+            bitSetOne(bitset, column.pointers[i]);
+        }
+        break;
+      }
+      case "datetime":
+      default: {
+        throw new Error("not implemented");
+      }
+    }
+    sets.push(bitset);
   }
+  let bitset = sets.length > 1 ? sets.reduce(intersection) : sets[0];
   return {
     columns: table.columns,
     bitset: table.bitset != null ? intersection(bitset, table.bitset) : bitset,
     order: table.order,
     size: table.size,
   };
-}
-
-function getFilterFn(keys) {
-  let variables = keys.map(
-    (key, index) => `predicate${index}=params["${key}"],v${index}=columns.get("${key}").values`,
-  );
-  let expressions = keys.map((key, index) => `predicate${index}(v${index}[index])`);
-  return new Function(
-    "params",
-    "columns",
-    `let ${variables.join(",")};\nreturn index => ${expressions.join("&&")}`,
-  );
 }
 
 const ONE = 0x80000000;
